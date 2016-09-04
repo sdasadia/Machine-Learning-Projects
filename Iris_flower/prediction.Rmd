@@ -1,0 +1,138 @@
+---
+title: "Predicting Exercise Quality "
+author: "Sarthak Dasadia"
+date: "July 30, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively.One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+## Goal
+
+The goal of this project is to predict the manner in which the participants did the exercise. This is the "classe" variable of the training set, which classifies the correct and incorrect outcomes into A, B, C, D, and E categories. This report describes how the model for the project was built, its cross validation, expected out of sample error calculation, and the choices made. It was used successfully to accurately predict all 20 different test cases on the Coursera website.
+
+More information is available from the website <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+## Getting and Cleaning Data
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+
+
+```{r}
+
+## Load Training and Test Data set
+
+training <- read.csv("training.csv",na.strings = c("NA", "#DIV/0!", ""))
+test <- read.csv("test.csv",na.strings = c("NA", "#DIV/0!", ""))
+
+
+dim(training) # Dimension of the training data set
+table(training$classe)  # Total no cases for each classe
+table(training$user_name)  # Total no of users
+
+# In the data sets, 1-6 colums are just information. Let's exclude that from training and test data sets.
+
+training <- training[, 7:160]
+test <- test[, 7:160]
+
+# Next step is to remove non a number values from both data sets. 
+
+removeNA <- apply(!is.na(training), 2, sum) > 19621 # apply sum on each column, pick those columns for which sum > 19621 (no of rows) 
+training <- training[,removeNA]  # subset those columns
+test <- test[,removeNA]
+
+```
+
+## Building Prediction Model
+
+# 1. Correlation Analysis
+
+
+```{r,warning=FALSE, message=FALSE}
+
+# Load required libraries
+
+library(caret)
+library(randomForest)
+library(rattle)
+
+# Let's build validation data set out of training data
+
+inValid <- createDataPartition(y = training$classe, p = 0.7, list = F)
+training <- training[inValid,]
+valid <- training[-inValid,]
+```
+
+We filtered essential data and now ready to apply machine learning algorithms. 
+
+```{r,warning=FALSE, message=FALSE}
+
+# PCA, lets check if any variable are correlated.
+
+M <- abs(cor(training[,-54]))
+diag(M) <- 0
+nrow(which(M > 0.8, arr.ind=T))
+
+```
+
+This suggests 38 varibles are strongly correlated. We can reduce the dimension (and noise) by performing Principal Component Analysis (PCA). 
+
+# 2. Principal Component Analysis (PCA) with Radom Forest Model
+
+
+```{r,warning=FALSE, message=FALSE}
+
+# The proceduce is following :
+
+#preProc <- preProcess(training[,-54], method ="pca", pcaComp = 5)
+#trainPC <- predict(preProc,training[,-54]) # Apply preProc to training data
+#modelFit <- train(training$classe ~ ., method = "rf", data = trainPC) # Fit a model
+
+#validPC <- predict(preProc,valid[,-54])  # Apply model to validation data set
+#confusionMatrix(valid$classe, predict(modelFit, validPC)) ## 100% accurate in valid set 
+
+## Alternatively, we can use tain command in caret library,
+
+modelFit1 <- train(training$classe ~ ., method = "rf", preProcess = "pca", data = training)
+confusionMatrix(valid$classe, predict(modelFit1, valid)) 
+
+```
+
+The PCA is 100% accurate on training and validation data sets. Notice the 95% confidence interval! 
+
+
+# 3. DeDecision Trees
+
+Let's try decision tree method.
+
+```{r,warning=FALSE, message=FALSE}
+modelFit2 <- train(classe ~ ., method = "rpart", data = training) 
+confusionMatrix(valid$classe, predict(modelFit2, valid))  ## Not a reliable model 
+fancyRpartPlot(modelFit2$finalModel) # Plot decision tree
+```
+
+As shown by the confussion matrix, this is not a reliable method. Thus, let's predict test data set with Radom Forest method described above. 
+
+## Applying the Selected Model to the Test Data
+
+In this case, the Random Forest model will be applied to predict the 20 test data sets. 
+
+```{r,warning=FALSE, message=FALSE}
+pred_PCA <- predict(modelFit1, newdata = test)
+pred_PCA
+```
+
+The model **correctly** predicted all 20 data points from the test data set (verified by coursera). 
